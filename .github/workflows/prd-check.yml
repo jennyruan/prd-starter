@@ -1,0 +1,31 @@
+# Runs on every push that changes a PRD section file.
+# 1) Fails the run if any reference is broken.  2) Regenerates Section Versions + Agent Plan and commits them.
+name: prd-check
+on:
+  push:
+    paths: ["docs/prd/**/[0-9][0-9]-*.md"]   # README.md changes do not re-trigger this
+permissions:
+  contents: write
+jobs:
+  prd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }             # full history is needed to count versions
+      - name: Check references
+        run: for d in docs/prd/PRD-*/; do python3 tools/prd_tool.py check "$d"; done
+      - name: Regenerate tables
+        run: |
+          for d in docs/prd/PRD-*/; do
+            python3 tools/prd_tool.py versions "$d"
+            python3 tools/prd_tool.py scope "$d" --write || true    # the empty template has no releases yet
+            python3 tools/prd_tool.py trace "$d" --repo . --write || true  # requirement status from code tags
+            python3 tools/prd_tool.py plan "$d" --write || true   # skipped while §12 is empty
+          done
+      - name: Commit generated tables
+        run: |
+          git config user.name  "prd-bot"
+          git config user.email "prd-bot@users.noreply.github.com"
+          git add docs/prd
+          git diff --cached --quiet || git commit -m "[auto] PRD: regenerate versions and agent plan"
+          git push

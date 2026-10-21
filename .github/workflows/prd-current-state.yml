@@ -1,0 +1,41 @@
+# Updates §3 Current State of every PRD: every Monday, and after each merge to main.
+# The agent commits directly (no PR), and may only change 03-current-state.md.
+# Check the input names against the current claude-code-action README before you enable this.
+name: prd-current-state
+on:
+  schedule: [{ cron: "0 16 * * 1" }]         # Mondays 09:00 Pacific
+  push:
+    branches: [main]
+    paths-ignore: ["docs/prd/**"]            # only code changes trigger it
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            For each folder docs/prd/PRD-*/ :
+            1. Read every section file, then research the codebase.
+            2. Rewrite ONLY 03-current-state.md: what exists today, relevant code (path + purpose),
+               and Drift, where each drift row uses the reference format [§N Name@vX#ID](file.md).
+               Get the current version numbers from the Section Versions table in README.md.
+            3. Set "Last verified" to today's date, the current commit SHA and your model name.
+            4. Run: python3 tools/prd_tool.py check <folder>  and fix any reference you wrote.
+            5. Commit only that file, with the message "[auto] <PRD id> §3: update current state", then push.
+            Never edit any other file.
+      # Commits made with the default GITHUB_TOKEN do not start other workflows,
+      # so prd-check will not run after the agent's commit. Refresh the tables here instead.
+      - name: Refresh Section Versions
+        run: |
+          git pull --ff-only
+          for d in docs/prd/PRD-*/; do python3 tools/prd_tool.py versions "$d"; done
+          git config user.name  "prd-bot"
+          git config user.email "prd-bot@users.noreply.github.com"
+          git add docs/prd
+          git diff --cached --quiet || git commit -m "[auto] PRD: regenerate section versions"
+          git push
