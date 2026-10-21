@@ -11,6 +11,7 @@ Commands
   trace    <prd_dir> --repo <path> [--write]
                                      Requirement status (not started / code only / code + tests) from
                                      PRD-ID/REQ-n tags in the code; --write puts it in §3.4
+  preview  <prd_dir>                 Print all sections as one Markdown document for review
   plan     <prd_dir> [--max-agents N] [--write]
                                      Agents needed + longest run, from the §12 task table;
                                      --write puts the result into README.md
@@ -623,6 +624,22 @@ def cmd_trace(prd: Path, repo: Path, write: bool) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- preview
+
+def cmd_preview(prd: Path) -> int:
+    """Print every section in order as one Markdown document, for human review."""
+    readme = (prd / "README.md").read_text(encoding="utf-8")
+    title = next((l.lstrip("# ").strip() for l in readme.splitlines() if l.startswith("# ")), prd.name)
+    out = [f"# {title} (preview)", "", "> Preview only. The real PRD is one file per section in this folder.", ""]
+    m = re.search(r"<!-- AUTO:release-scope START[^>]*-->\n(.*?)\n<!-- AUTO:release-scope END -->", readme, re.S)
+    if m:
+        out += ["## Release Scope (generated)", "", m.group(1), ""]
+    for f in sorted(p for p in prd.iterdir() if SECTION_FILE.match(p.name)):
+        out += [f"<sub>File: `{f.name}`</sub>", "", f.read_text(encoding="utf-8").rstrip(), ""]
+    print("\n".join(out))
+    return 0
+
+
 # ---------------------------------------------------------------- main
 
 def main() -> int:
@@ -632,6 +649,7 @@ def main() -> int:
     c = sub.add_parser("check"); c.add_argument("prd", type=Path); c.add_argument("--feedback", action="store_true")
     r = sub.add_parser("scope"); r.add_argument("prd", type=Path); r.add_argument("--write", action="store_true")
     t = sub.add_parser("trace"); t.add_argument("prd", type=Path); t.add_argument("--repo", type=Path, required=True); t.add_argument("--write", action="store_true")
+    v2 = sub.add_parser("preview"); v2.add_argument("prd", type=Path)
     p = sub.add_parser("plan"); p.add_argument("prd", type=Path)
     p.add_argument("--max-agents", type=int); p.add_argument("--write", action="store_true")
     a = ap.parse_args()
@@ -642,6 +660,8 @@ def main() -> int:
         return cmd_check(prd, a.feedback)
     if a.cmd == "scope":
         return cmd_scope(prd, a.write)
+    if a.cmd == "preview":
+        return cmd_preview(prd)
     if a.cmd == "trace":
         return cmd_trace(prd, a.repo.resolve(), a.write)
     return cmd_plan(prd, a.max_agents, a.write)
